@@ -1,20 +1,25 @@
 module.exports = function (Event) {
 
+    const app = require('../../server/server');
+    const ds = app.datasources.assignment;
+
     Event.addEvent = async function (startdate, enddate, starttime, endtime, eventname) {
         try {
             // Sanity check regarding overlapping events
-            const overlapEvents = await Event.find({
-                where: { 
-                    isactive: 1,
-                    startdate,
-                    or: [
-                        {and: [ {starttime: { lte: starttime }},  {endtime: { gte: starttime }} ]},
-                        {and: [ {starttime: { lte: endtime }},  {endtime: { gte: endtime }} ]}
-                    ]
-                }
-            });
-            if(overlapEvents.length >= 1) return { success: false, message: 'Cannot insert due to overlap!' }
-            
+            const overlapQueryPromise = () => {
+                return new Promise((resolve, reject) => {
+                    ds.connector.query('CALL getOverlappingEvents(?,?,?)', [startdate, starttime, endtime], function(err, result) {
+                        if (err) {
+                          return reject(err);
+                        }
+                        return resolve(result[0]);       
+                      });
+                });
+            };
+            const events = await overlapQueryPromise();
+            console.log(events);
+            if(events.length >= 1) return { success: false, message: 'Cannot insert due to overlap!' }
+
             const insertEventResponse = await Event.create({
                 eventname,
                 startdate,
@@ -48,8 +53,6 @@ module.exports = function (Event) {
 
     Event.getCalendar = async function (startdate, enddate) {
         try {
-            const app = require('../../server/server');
-            const ds = app.datasources.assignment;
             const eventQueryPromise = () => {
                 return new Promise((resolve, reject) => {
                     ds.connector.query('CALL getCalendar(?,?)', [startdate, enddate], function(err, result) {
